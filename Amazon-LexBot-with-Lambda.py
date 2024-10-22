@@ -1,5 +1,5 @@
 import json
-
+#first lambda function
 def lambda_handler(event, context):
     # Log the incoming event for debugging purposes
     print("Event from Lex:", json.dumps(event, indent=2))
