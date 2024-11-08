@@ -1,5 +1,6 @@
 import json
-#first lambda function
+import re
+
 def lambda_handler(event, context):
     # Log the incoming event for debugging purposes
     print("Event from Lex:", json.dumps(event, indent=2))
@@ -37,12 +38,18 @@ def lambda_handler(event, context):
     elif contact_info is None:
         return elicit_slot(intent_name, slots, 'Contact-Info', "Please provide your contact information.")
     
-    # If the order time is missing or not recognized, ask again
-    elif order_time is None:
+    # Check if order_time is provided and valid
+    elif order_time is None or not is_valid_time(order_time):
         return elicit_slot(intent_name, slots, 'Order-Time', "When would you like your pizza to be delivered or ready for pickup? You can say something like '5 PM' or 'tomorrow at noon'.")
 
     # If all slots are filled, confirm and close the conversation
     return close_order(intent_name, slots, f"Thank you {customer_name}! Your {pizzasize} {pizzatype} pizza with {crusttype} crust and {toppings} will be ready at {order_time}. We'll contact you at {contact_info}.")
+
+# Function to validate time format
+def is_valid_time(order_time):
+    # Regex for matching 12-hour format with AM/PM
+    pattern = r'^(1[0-2]|0?[1-9]):[0-5][0-9]\s*[AP]M$|^[0-2]?[0-9]\s*([ap]m)$|^([0-1]?[0-9]|2[0-3])(:[0-5][0-9])?$'
+    return re.match(pattern, order_time) is not None
 
 # Function to elicit the next slot
 def elicit_slot(intent_name, slots, slot_to_elicit, message):
