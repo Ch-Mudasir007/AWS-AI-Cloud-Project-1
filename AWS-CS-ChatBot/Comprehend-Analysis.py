@@ -1,17 +1,19 @@
 import json
 import re
+import boto3  # Import boto3 for AWS SDK
 
+# Initialize Comprehend client
+comprehend = boto3.client('comprehend')
+
+# Lambda function
 def lambda_handler(event, context):
-    # Log the incoming event for debugging purposes
     print("Event from Lex:", json.dumps(event, indent=2))
 
-    # Extract session state and intent information
     session_state = event.get('sessionState', {})
     intent = session_state.get('intent', {})
     slots = intent.get('slots', {})
     intent_name = intent.get('name')
 
-    # Retrieve the slot values, handle if they're None
     pizzatype = slots.get('pizzatype', {}).get('value', {}).get('interpretedValue') if slots.get('pizzatype') else None
     pizzasize = slots.get('pizzasize', {}).get('value', {}).get('interpretedValue') if slots.get('pizzasize') else None
     crusttype = slots.get('crusttype', {}).get('value', {}).get('interpretedValue') if slots.get('crusttype') else None
@@ -20,11 +22,15 @@ def lambda_handler(event, context):
     contact_info = slots.get('Contact-Info', {}).get('value', {}).get('interpretedValue') if slots.get('Contact-Info') else None
     order_time = slots.get('Order-Time', {}).get('value', {}).get('interpretedValue') if slots.get('Order-Time') else None
 
-    # Print slot values for debugging
     print(f"Pizza Type: {pizzatype}, Size: {pizzasize}, Crust: {crusttype}, Toppings: {toppings}")
     print(f"Customer Name: {customer_name}, Contact Info: {contact_info}, Order Time: {order_time}")
 
-    # Check for missing slots and elicit the next required slot
+    # Call Amazon Comprehend for sentiment analysis
+    if customer_name:
+        sentiment = analyze_sentiment(customer_name)
+        print(f"Detected Sentiment: {sentiment}")
+
+    # Elicit slots based on missing inputs
     if pizzatype is None:
         return elicit_slot(intent_name, slots, 'pizzatype', "What type of pizza would you like?")
     elif pizzasize is None:
@@ -37,21 +43,23 @@ def lambda_handler(event, context):
         return elicit_slot(intent_name, slots, 'Customer-Name', "Can I have your name, please?")
     elif contact_info is None:
         return elicit_slot(intent_name, slots, 'Contact-Info', "Please provide your contact information.")
-    
-    # Check if order_time is provided and valid
-    elif order_time is None or not is_valid_time(order_time):
-        return elicit_slot(intent_name, slots, 'Order-Time', "When would you like your pizza to be delivered or ready for pickup? You can say something like '5 PM' or 'tomorrow at noon'.")
+    elif order_time is None:
+        return elicit_slot(intent_name, slots, 'Order-Time', "When would you like your pizza to be delivered or ready for pickup?")
 
-    # If all slots are filled, confirm and close the conversation
-    return close_order(intent_name, slots, f"Thank you {customer_name}! Your {pizzasize} {pizzatype} pizza with {crusttype} crust and {toppings} will be ready at {order_time}. We'll contact you at {contact_info}.")
+    # Generate a final response based on sentiment
+    if sentiment == 'NEGATIVE':
+        message = f"Thank you {customer_name}. I'm sorry to hear you might not be feeling great. We hope our {pizzasize} {pizzatype} pizza with {crusttype} crust and {toppings} will cheer you up!"
+    else:
+        message = f"Thank you {customer_name}! Your {pizzasize} {pizzatype} pizza with {crusttype} crust and {toppings} will be ready at {order_time}. We'll contact you at {contact_info}."
 
-# Function to validate time format
-def is_valid_time(order_time):
-    # Regex for matching 12-hour format with AM/PM
-    pattern = r'^(1[0-2]|0?[1-9]):[0-5][0-9]\s*[AP]M$|^[0-2]?[0-9]\s*([ap]m)$|^([0-1]?[0-9]|2[0-3])(:[0-5][0-9])?$'
-    return re.match(pattern, order_time) is not None
+    return close_order(intent_name, slots, message)
 
-# Function to elicit the next slot
+# Function to analyze sentiment using Comprehend
+def analyze_sentiment(text):
+    response = comprehend.detect_sentiment(Text=text, LanguageCode='en')
+    return response['Sentiment']
+
+# Elicit slot function
 def elicit_slot(intent_name, slots, slot_to_elicit, message):
     return {
         "sessionState": {
@@ -73,7 +81,7 @@ def elicit_slot(intent_name, slots, slot_to_elicit, message):
         ]
     }
 
-# Function to close the conversation after all slots are filled
+# Close order function
 def close_order(intent_name, slots, message):
     return {
         "sessionState": {
@@ -84,7 +92,7 @@ def close_order(intent_name, slots, message):
             "intent": {
                 "name": intent_name,
                 "slots": slots,
-                "state": "Fulfilled"  # Ensuring intent state is fulfilled
+                "state": "Fulfilled"
             }
         },
         "messages": [
